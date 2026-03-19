@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Dashboard Juntas por Fluído</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; background:#f4f6f9; }
+    header { background:#0f766e; color:#fff; padding:16px; }
+    .container { padding:16px; }
+    .filters { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
+    select, input { padding:8px; border-radius:6px; border:1px solid #ccc; }
+    button { padding:8px 12px; border:none; border-radius:6px; background:#0f766e; color:#fff; cursor:pointer; }
+    table { width:100%; border-collapse: collapse; margin-top:10px; background:#fff; }
+    th, td { padding:8px; border:1px solid #ddd; }
+    th { background:#eee; }
+  </style>
+</head>
+<body>
+<header>
+  <h2>Dashboard Juntas por Fluído</h2>
+</header>
+
+<div class="container">
+
+  <div class="filters">
+    <select id="fContrato"><option value="">Contrato</option></select>
+    <select id="fFluido"><option value="">Fluído</option></select>
+    <select id="fDiam"><option value="">Diam</option></select>
+    <select id="fEspessura"><option value="">Espessura</option></select>
+    <select id="fProg"><option value="">Prog Fab</option></select>
+    <input id="fBusca" placeholder="Busca geral"/>
+    <button onclick="loadData()">Atualizar</button>
+  </div>
+
+  <h3>Resumo por Fluído</h3>
+  <table>
+    <thead>
+      <tr><th>Fluído</th><th>Qtd</th></tr>
+    </thead>
+    <tbody id="resumo"></tbody>
+  </table>
+
+  <h3>Detalhamento</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Contrato</th>
+        <th>Fluído</th>
+        <th>Diam</th>
+        <th>Espessura</th>
+        <th>Prog Fab</th>
+      </tr>
+    </thead>
+    <tbody id="dados"></tbody>
+  </table>
+
+</div>
+
+<script>
+const URL = "COLE_AQUI_URL_APPS_SCRIPT";
+let dataGlobal = [];
+
+function preencherSelect(id, valores, placeholder){
+  const el = document.getElementById(id);
+  const atual = el.value;
+  const unicos = [...new Set(valores.filter(v => v !== undefined && v !== null && String(v).trim() !== ""))]
+    .sort((a,b) => String(a).localeCompare(String(b), 'pt-BR', {numeric:true}));
+  el.innerHTML = `<option value="">${placeholder}</option>`;
+  unicos.forEach(v => {
+    el.innerHTML += `<option value="${v}">${v}</option>`;
+  });
+  el.value = unicos.includes(atual) ? atual : "";
+}
+
+function popularFiltros(){
+  preencherSelect("fContrato", dataGlobal.map(r => r.CONTRATO), "Contrato");
+  preencherSelect("fFluido", dataGlobal.map(r => r["FLUÍDO"]), "Fluído");
+  preencherSelect("fDiam", dataGlobal.map(r => r.DIAM), "Diam");
+  preencherSelect("fEspessura", dataGlobal.map(r => r.ESPESSURA), "Espessura");
+  preencherSelect("fProg", dataGlobal.map(r => r.PROG_FAB), "Prog Fab");
+}
+
+async function loadData(){
+  const res = await fetch(URL);
+  const json = await res.json();
+  dataGlobal = json.data || [];
+  popularFiltros();
+  render();
+}
+
+function getFiltrado(){
+  const contrato = document.getElementById("fContrato").value;
+  const fluido = document.getElementById("fFluido").value;
+  const diam = document.getElementById("fDiam").value;
+  const espessura = document.getElementById("fEspessura").value;
+  const prog = document.getElementById("fProg").value;
+  const busca = document.getElementById("fBusca").value.toLowerCase().trim();
+
+  return dataGlobal.filter(r => {
+    const okContrato = !contrato || r.CONTRATO == contrato;
+    const okFluido = !fluido || r["FLUÍDO"] == fluido;
+    const okDiam = !diam || r.DIAM == diam;
+    const okEsp = !espessura || String(r.ESPESSURA) == espessura;
+    const okProg = !prog || r.PROG_FAB == prog;
+
+    const texto = [
+      r.CONTRATO, r["FLUÍDO"], r.DIAM, r.ESPESSURA, r.PROG_FAB, r.MATERIAL, r.SCH
+    ].join(" ").toLowerCase();
+
+    const okBusca = !busca || texto.includes(busca);
+
+    return okContrato && okFluido && okDiam && okEsp && okProg && okBusca;
+  });
+}
+
+function render(){
+  const filtrado = getFiltrado();
+  const resumo = {};
+  const tbodyResumo = document.getElementById("resumo");
+  const tbodyDados = document.getElementById("dados");
+
+  tbodyResumo.innerHTML = "";
+  tbodyDados.innerHTML = "";
+
+  filtrado.forEach(r=>{
+    const fluido = r["FLUÍDO"] || "(vazio)";
+    resumo[fluido] = (resumo[fluido]||0)+1;
+
+    tbodyDados.innerHTML += `
+      <tr>
+        <td>${r.CONTRATO || ""}</td>
+        <td>${r["FLUÍDO"] || ""}</td>
+        <td>${r.DIAM || ""}</td>
+        <td>${r.ESPESSURA || ""}</td>
+        <td>${r.PROG_FAB || ""}</td>
+      </tr>
+    `;
+  });
+
+  Object.keys(resumo)
+    .sort((a,b) => resumo[b] - resumo[a])
+    .forEach(f=>{
+      tbodyResumo.innerHTML += `<tr><td>${f}</td><td>${resumo[f]}</td></tr>`;
+    });
+}
+
+["fContrato","fFluido","fDiam","fEspessura","fProg"].forEach(id => {
+  document.addEventListener("change", function(e){
+    if(e.target && e.target.id === id) render();
+  });
+});
+document.addEventListener("input", function(e){
+  if(e.target && e.target.id === "fBusca") render();
+});
+</script>
+
+</body>
+</html>
