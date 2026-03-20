@@ -5,15 +5,23 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Dashboard Juntas por Fluído</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 0; background:#f4f6f9; }
+    body { font-family: Arial, sans-serif; margin: 0; background:#f4f6f9; color:#1f2937; }
     header { background:#0f766e; color:#fff; padding:16px; }
-    .container { padding:16px; }
-    .filters { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
-    select, input { padding:8px; border-radius:6px; border:1px solid #ccc; }
+    .container { padding:16px; max-width:1400px; margin:0 auto; }
+    .filters, .cards { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px; }
+    select, input { padding:8px; border-radius:6px; border:1px solid #ccc; min-width:170px; }
     button { padding:8px 12px; border:none; border-radius:6px; background:#0f766e; color:#fff; cursor:pointer; }
+    button.secondary { background:#475569; }
     table { width:100%; border-collapse: collapse; margin-top:10px; background:#fff; }
     th, td { padding:8px; border:1px solid #ddd; }
-    th { background:#eee; }
+    th { background:#eee; position:sticky; top:0; }
+    .card { background:#fff; border:1px solid #ddd; border-radius:8px; padding:12px 16px; min-width:170px; }
+    .card .label { font-size:12px; color:#64748b; text-transform:uppercase; margin-bottom:6px; }
+    .card .value { font-size:24px; font-weight:bold; }
+    .status { margin:10px 0; color:#475569; font-size:14px; }
+    .table-wrap { max-height:520px; overflow:auto; background:#fff; border:1px solid #ddd; }
+    h3 { margin-bottom:4px; }
+    .actions { margin-bottom: 12px; display:flex; gap:10px; flex-wrap:wrap; }
   </style>
 </head>
 <body>
@@ -23,6 +31,11 @@
 
 <div class="container">
 
+  <div class="actions">
+    <button onclick="loadData()">Atualizar dados</button>
+    <button class="secondary" onclick="iniciarCarga()">Iniciar recarga da base</button>
+  </div>
+
   <div class="filters">
     <select id="fContrato"><option value="">Contrato</option></select>
     <select id="fFluido"><option value="">Fluído</option></select>
@@ -30,139 +43,179 @@
     <select id="fEspessura"><option value="">Espessura</option></select>
     <select id="fProg"><option value="">Prog Fab</option></select>
     <input id="fBusca" placeholder="Busca geral"/>
-    <button onclick="loadData()">Atualizar</button>
   </div>
 
+  <div class="cards">
+    <div class="card">
+      <div class="label">Total filtrado</div>
+      <div class="value" id="kpiTotal">0</div>
+    </div>
+    <div class="card">
+      <div class="label">Fluídos</div>
+      <div class="value" id="kpiFluidos">0</div>
+    </div>
+    <div class="card">
+      <div class="label">Programações</div>
+      <div class="value" id="kpiProg">0</div>
+    </div>
+  </div>
+
+  <div class="status" id="status">Pronto.</div>
+
   <h3>Resumo por Fluído</h3>
-  <table>
-    <thead>
-      <tr><th>Fluído</th><th>Qtd</th></tr>
-    </thead>
-    <tbody id="resumo"></tbody>
-  </table>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Fluído</th><th>Qtd</th></tr>
+      </thead>
+      <tbody id="resumo"></tbody>
+    </table>
+  </div>
 
   <h3>Detalhamento</h3>
-  <table>
-    <thead>
-      <tr>
-        <th>Contrato</th>
-        <th>Fluído</th>
-        <th>Diam</th>
-        <th>Espessura</th>
-        <th>Prog Fab</th>
-      </tr>
-    </thead>
-    <tbody id="dados"></tbody>
-  </table>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Contrato</th>
+          <th>Fluído</th>
+          <th>Diam</th>
+          <th>Espessura</th>
+          <th>Prog Fab</th>
+        </tr>
+      </thead>
+      <tbody id="dados"></tbody>
+    </table>
+  </div>
 
 </div>
 
 <script>
-const URL = "https://script.google.com/macros/s/AKfycbzRe-2N9f3I-87oSxfjui7hR67KUSOMwgdlcQJShexLybwCWC9L5QBB8nv0DokizwvS/exec";
-let dataGlobal = [];
+const URL = "COLE_AQUI_URL_DO_APPS_SCRIPT_EXEC";
 
 function preencherSelect(id, valores, placeholder){
   const el = document.getElementById(id);
   const atual = el.value;
-  const unicos = [...new Set(valores.filter(v => v !== undefined && v !== null && String(v).trim() !== ""))]
+  const unicos = [...new Set((valores || []).filter(v => v !== undefined && v !== null && String(v).trim() !== ""))]
     .sort((a,b) => String(a).localeCompare(String(b), 'pt-BR', {numeric:true}));
   el.innerHTML = `<option value="">${placeholder}</option>`;
   unicos.forEach(v => {
-    el.innerHTML += `<option value="${v}">${v}</option>`;
+    const option = document.createElement("option");
+    option.value = v;
+    option.textContent = v;
+    el.appendChild(option);
   });
   el.value = unicos.includes(atual) ? atual : "";
 }
 
-function popularFiltros(){
-  preencherSelect("fContrato", dataGlobal.map(r => r.CONTRATO), "Contrato");
-  preencherSelect("fFluido", dataGlobal.map(r => r["FLUÍDO"]), "Fluído");
-  preencherSelect("fDiam", dataGlobal.map(r => r.DIAM), "Diam");
-  preencherSelect("fEspessura", dataGlobal.map(r => r.ESPESSURA), "Espessura");
-  preencherSelect("fProg", dataGlobal.map(r => r.PROG_FAB), "Prog Fab");
+function montarUrl() {
+  const params = new URLSearchParams();
+
+  const contrato = document.getElementById("fContrato").value.trim();
+  const fluido = document.getElementById("fFluido").value.trim();
+  const diam = document.getElementById("fDiam").value.trim();
+  const espessura = document.getElementById("fEspessura").value.trim();
+  const prog = document.getElementById("fProg").value.trim();
+  const busca = document.getElementById("fBusca").value.trim();
+
+  if (contrato) params.set("contrato", contrato);
+  if (fluido) params.set("fluido", fluido);
+  if (diam) params.set("diam", diam);
+  if (espessura) params.set("espessura", espessura);
+  if (prog) params.set("prog_fab", prog);
+  if (busca) params.set("busca", busca);
+
+  const query = params.toString();
+  return query ? `${URL}?${query}` : URL;
 }
 
-async function loadData(){
-  try {
-    const res = await fetch(URL, { cache: "no-store" });
-    const json = await res.json();
-
-    if (!json.success) {
-      throw new Error(json.error || "Erro ao carregar dados");
-    }
-
-    dataGlobal = json.data || [];
-    popularFiltros();
-    render();
-  } catch (erro) {
-    console.error("Erro ao carregar dados:", erro);
-    alert("Erro ao carregar dados: " + erro.message);
-  }
+function atualizarFiltros(filtros) {
+  preencherSelect("fContrato", filtros.contratos || [], "Contrato");
+  preencherSelect("fFluido", filtros.fluidos || [], "Fluído");
+  preencherSelect("fDiam", filtros.diams || [], "Diam");
+  preencherSelect("fEspessura", filtros.espessuras || [], "Espessura");
+  preencherSelect("fProg", filtros.progs || [], "Prog Fab");
 }
 
-function getFiltrado(){
-  const contrato = document.getElementById("fContrato").value;
-  const fluido = document.getElementById("fFluido").value;
-  const diam = document.getElementById("fDiam").value;
-  const espessura = document.getElementById("fEspessura").value;
-  const prog = document.getElementById("fProg").value;
-  const busca = document.getElementById("fBusca").value.toLowerCase().trim();
-
-  return dataGlobal.filter(r => {
-    const okContrato = !contrato || r.CONTRATO == contrato;
-    const okFluido = !fluido || r["FLUÍDO"] == fluido;
-    const okDiam = !diam || r.DIAM == diam;
-    const okEsp = !espessura || String(r.ESPESSURA) == espessura;
-    const okProg = !prog || r.PROG_FAB == prog;
-
-    const texto = [
-      r.CONTRATO, r["FLUÍDO"], r.DIAM, r.ESPESSURA, r.PROG_FAB, r.MATERIAL, r.SCH
-    ].join(" ").toLowerCase();
-
-    const okBusca = !busca || texto.includes(busca);
-
-    return okContrato && okFluido && okDiam && okEsp && okProg && okBusca;
-  });
-}
-
-function render(){
-  const filtrado = getFiltrado();
-  const resumo = {};
+function render(dados, resumo) {
   const tbodyResumo = document.getElementById("resumo");
   const tbodyDados = document.getElementById("dados");
 
   tbodyResumo.innerHTML = "";
   tbodyDados.innerHTML = "";
 
-  filtrado.forEach(r => {
-    const fluido = r["FLUÍDO"] || "(vazio)";
-    resumo[fluido] = (resumo[fluido] || 0) + 1;
-
-    tbodyDados.innerHTML += `
-      <tr>
-        <td>${r.CONTRATO || ""}</td>
-        <td>${r["FLUÍDO"] || ""}</td>
-        <td>${r.DIAM || ""}</td>
-        <td>${r.ESPESSURA || ""}</td>
-        <td>${r.PROG_FAB || ""}</td>
-      </tr>
-    `;
-  });
-
-  Object.keys(resumo)
-    .sort((a,b) => resumo[b] - resumo[a])
-    .forEach(f => {
-      tbodyResumo.innerHTML += `<tr><td>${f}</td><td>${resumo[f]}</td></tr>`;
+  if (!resumo.length) {
+    tbodyResumo.innerHTML = `<tr><td colspan="2">Sem dados.</td></tr>`;
+  } else {
+    resumo.forEach(item => {
+      tbodyResumo.innerHTML += `<tr><td>${item.fluido || ""}</td><td>${item.qtd || 0}</td></tr>`;
     });
+  }
+
+  if (!dados.length) {
+    tbodyDados.innerHTML = `<tr><td colspan="5">Sem registros para os filtros informados.</td></tr>`;
+  } else {
+    dados.forEach(r => {
+      tbodyDados.innerHTML += `
+        <tr>
+          <td>${r.CONTRATO || ""}</td>
+          <td>${r["FLUÍDO"] || ""}</td>
+          <td>${r.DIAM || ""}</td>
+          <td>${r.ESPESSURA || ""}</td>
+          <td>${r.PROG_FAB || ""}</td>
+        </tr>
+      `;
+    });
+  }
+
+  document.getElementById("kpiTotal").textContent = dados.length;
+  document.getElementById("kpiFluidos").textContent = resumo.length;
+  document.getElementById("kpiProg").textContent = new Set(dados.map(x => x.PROG_FAB).filter(Boolean)).size;
+}
+
+async function loadData() {
+  const status = document.getElementById("status");
+  try {
+    status.textContent = "Carregando...";
+    const res = await fetch(montarUrl(), { cache: "no-store" });
+    const json = await res.json();
+
+    if (!json.success) {
+      throw new Error(json.error || "Erro ao carregar dados");
+    }
+
+    atualizarFiltros(json.filtros || {});
+    render(json.data || [], json.resumo || []);
+    status.textContent = `${json.total || 0} registro(s) carregado(s).`;
+  } catch (erro) {
+    console.error(erro);
+    status.textContent = "Erro: " + erro.message;
+    alert("Erro ao carregar dados: " + erro.message);
+  }
+}
+
+async function iniciarCarga() {
+  const status = document.getElementById("status");
+  try {
+    status.textContent = "Iniciando recarga da base...";
+    const res = await fetch(`${URL}?update=true`, { cache: "no-store" });
+    const json = await res.json();
+    if (!json.success) throw new Error(json.error || "Erro ao iniciar recarga");
+    status.textContent = json.message || "Recarga iniciada.";
+  } catch (erro) {
+    console.error(erro);
+    status.textContent = "Erro: " + erro.message;
+    alert("Erro ao iniciar recarga: " + erro.message);
+  }
 }
 
 ["fContrato","fFluido","fDiam","fEspessura","fProg"].forEach(id => {
-  document.addEventListener("change", function(e){
-    if (e.target && e.target.id === id) render();
-  });
+  document.getElementById(id).addEventListener("change", loadData);
 });
 
-document.addEventListener("input", function(e){
-  if (e.target && e.target.id === "fBusca") render();
+document.getElementById("fBusca").addEventListener("input", function() {
+  clearTimeout(window._buscaTimer);
+  window._buscaTimer = setTimeout(loadData, 300);
 });
 
 window.addEventListener("load", loadData);
